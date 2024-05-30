@@ -12,8 +12,8 @@ require (
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.23.0
 	github.com/prometheus/client_golang v1.14.0
-	github.com/redhat-cne/rest-api v0.1.1-0.20240321182038-6eeefb7aa65d
-	github.com/redhat-cne/sdk-go v0.1.1-0.20240321130308-a635605654ab
+	github.com/redhat-cne/rest-api v0.0.0-unpublished
+	github.com/redhat-cne/sdk-go v0.0.0-unpublished
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/net v0.7.0
@@ -24,6 +24,10 @@ require (
 	k8s.io/utils v0.0.0-20221107191617-1a15be271d1d
 	sigs.k8s.io/controller-runtime v0.12.3
 )
+
+replace github.com/redhat-cne/rest-api v0.0.0-unpublished => ../rest-api
+
+replace github.com/redhat-cne/sdk-go v0.0.0-unpublished => ../sdk-go
 
 require (
 	github.com/Azure/go-amqp v0.17.5 // indirect

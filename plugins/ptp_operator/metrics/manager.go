@@ -271,9 +271,16 @@ func (p *PTPEventManager) publish(data ceevent.Data, eventSource string, eventTy
 			log.Errorf("failed to create ptp event, %s", err)
 			return
 		}
-		if err = common.PublishEventViaAPI(p.scConfig, e); err != nil {
-			log.Errorf("failed to publish ptp event %v, %s", e, err)
-			return
+		if p.scConfig.APIVersion != "2.0" {
+			if err = common.PublishEventViaAPI(p.scConfig, e); err != nil {
+				log.Errorf("failed to publish ptp event %v, %s", e, err)
+				return
+			}
+		} else {
+			if err = common.PublishEventViaAPIV2(p.scConfig, e); err != nil {
+				log.Errorf("failed to publish ptp event %v, %s", e, err)
+				return
+			}
 		}
 	} else {
 		log.Errorf("failed to publish ptp event due to missing publisher for type %s", string(eventType))

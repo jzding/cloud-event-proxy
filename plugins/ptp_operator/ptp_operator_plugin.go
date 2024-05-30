@@ -182,10 +182,13 @@ func Start(wg *sync.WaitGroup, configuration *common.SCConfiguration, fn func(e 
 			log.Error("could not set receiver for http ")
 		}
 	}
+	if config.APIVersion == "2.0" {
+		config.RestAPI.SetOnStatusReceiveOverrideFn(onReceiveOverrideFn)
+	}
 	return nil
 }
 
-// getCurrentStatOverrideFn is called when current state is received by rest api
+// getCurrentStatOverrideFn is called when GET CurrentState request is received by rest api
 func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 	return func(e v2.Event, d *channel.DataChan) error {
 		if e.Source() != "" {

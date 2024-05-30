@@ -433,6 +433,7 @@ func (h *Server) HTTPProcessor(wg *sync.WaitGroup) {
 					// Post the events to the address specified
 					if d.ClientID != uuid.Nil {
 						if url := h.subscriberAPI.GetSubscriberURLByResourceAndClientID(d.ClientID, d.Address); url != nil {
+							log.Infof("found subscriber %s", *url)
 							data := &channel.DataChan{
 								ID:                  d.ID,
 								Address:             d.Address,
@@ -443,6 +444,7 @@ func (h *Server) HTTPProcessor(wg *sync.WaitGroup) {
 								OnReceiveOverrideFn: d.OnReceiveOverrideFn,
 								ProcessEventFn:      d.ProcessEventFn,
 							}
+							log.Infof("post events %s to subscriber %s", d.Address, *url)
 							h.SendTo(wg, d.ClientID, *url, d.Address, data.Data, d.Type)
 							log.Infof("status ping: queued event status for client %s  for resource %s", d.ClientID.String(), d.Address)
 						} else {

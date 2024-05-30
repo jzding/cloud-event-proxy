@@ -60,16 +60,19 @@ var (
 	storePath               string
 	transportHost           string
 	apiPort                 int
+	apiVersion              string
 	channelBufferSize       = 100
 	statusChannelBufferSize = 50
 	scConfig                *common.SCConfiguration
 	metricsAddr             string
 	apiPath                 = "/api/ocloudNotifications/v1/"
-	httpEventPublisher      string
-	pluginHandler           plugins.Handler
-	amqInitTimeout          = 3 * time.Minute
-	nodeName                string
-	namespace               string
+	// Event API Version 2 is O-RAN V3.0 Compliant
+	apiPathV2          = "/api/ocloudNotifications/v2/"
+	httpEventPublisher string
+	pluginHandler      plugins.Handler
+	amqInitTimeout     = 3 * time.Minute
+	nodeName           string
+	namespace          string
 )
 
 func main() {
@@ -79,6 +82,7 @@ func main() {
 	flag.StringVar(&storePath, "store-path", ".", "The path to store publisher and subscription info.")
 	flag.StringVar(&transportHost, "transport-host", "amqp:localhost:5672", "The transport bus hostname or service name.")
 	flag.IntVar(&apiPort, "api-port", 8089, "The address the rest api endpoint binds to.")
+	flag.StringVar(&apiVersion, "api-version", "1.0", "The address the rest api endpoint binds to.")
 	flag.StringVar(&httpEventPublisher, "http-event-publishers", "", "Comma separated address of the publishers available.")
 
 	flag.Parse()
@@ -112,6 +116,7 @@ func main() {
 		CloseCh:       make(chan struct{}),
 		APIPort:       apiPort,
 		APIPath:       apiPath,
+		APIVersion:    apiVersion,
 		StorePath:     storePath,
 		PubSubAPI:     v1pubs.GetAPIInstance(storePath),
 		BaseURL:       nil,
@@ -149,6 +154,17 @@ func main() {
 
 	pluginHandler = plugins.Handler{Path: "./plugins"}
 	transportEnabled := true
+
+	// make PubSub REST API accessible by event service ptp-event-publisher-service-NODE_NAME
+	if scConfig.APIVersion == "2.0" {
+		// switch between Internal API port and PubSub port
+		tmpPort := scConfig.APIPort
+		scConfig.APIPort = scConfig.TransportHost.Port
+		scConfig.TransportHost.Port = tmpPort
+		scConfig.APIPath = apiPathV2
+		log.Infof("DZK 2.0 set scConfig.APIPort=%d, scConfig.APIPath=%s, scConfig.TransportHost.Port=%d", scConfig.APIPort, scConfig.APIPath, scConfig.TransportHost.Port)
+	}
+
 	// load amqp
 	if scConfig.TransportHost.Type == common.AMQ {
 		log.Infof("AMQ enabled as event transport %s", scConfig.TransportHost.String())
@@ -164,20 +180,23 @@ func main() {
 				transportEnabled = false
 			}
 		}
-	} else if scConfig.TransportHost.Type == common.HTTP {
+	} else if scConfig.TransportHost.Type == common.HTTP && scConfig.APIVersion != "2.0" {
 		transportEnabled = enableHTTPTransport(&wg, eventPublishers)
 	} else {
 		transportEnabled = false
 	}
+	log.Infof("DZK main 1")
+
 	// if all transport types failed then process internally
-	if !transportEnabled {
+	if !transportEnabled && scConfig.APIVersion != "2.0" {
 		log.Errorf("No transport is enabled for sending events %s", scConfig.TransportHost.String())
 		wg.Add(1)
 		go ProcessInChannel(&wg, scConfig)
 	}
+	log.Infof("DZK main 2")
 
 	/* Enable pub/sub services */
-	_, err = common.StartPubSubService(scConfig)
+	err = common.StartPubSubService(scConfig)
 	if err != nil {
 		log.Fatal("pub/sub service API failed to start.")
 	}
@@ -196,8 +215,11 @@ func main() {
 			log.Fatalf("error loading mock plugin %v", err)
 		}
 	}
+	log.Infof("DZK main 3")
+
 	// process data that are coming from api server requests
 	ProcessOutChannel(&wg, scConfig)
+	log.Infof("DZK main 4")
 }
 
 func metricServer(address string) {
@@ -215,6 +237,7 @@ func metricServer(address string) {
 
 // ProcessOutChannel this process the out channel;data put out by transport
 func ProcessOutChannel(wg *sync.WaitGroup, scConfig *common.SCConfiguration) {
+	log.Infof("DZK in ProcessOutChannel")
 	// Send back the acknowledgement to publisher
 	defer wg.Done()
 	postProcessFn := func(address string, status channel.Status) {
@@ -255,6 +278,7 @@ func ProcessOutChannel(wg *sync.WaitGroup, scConfig *common.SCConfiguration) {
 					log.Infof("data %#v", d.Data)
 					continue
 				} else if d.Status == channel.NEW {
+					log.Infof("DZK received event notification %#v", event)
 					if d.ProcessEventFn != nil { // always leave event to handle by default method for events
 						if err = d.ProcessEventFn(event); err != nil {
 							log.Errorf("error processing data %v", err)
@@ -264,6 +288,7 @@ func ProcessOutChannel(wg *sync.WaitGroup, scConfig *common.SCConfiguration) {
 						if sub.EndPointURI != nil {
 							restClient := restclient.New()
 							event.ID = sub.ID // set ID to the subscriptionID
+							log.Infof("DZK received event with sub! posting to %s", sub.EndPointURI)
 							err = restClient.PostEvent(sub.EndPointURI, event)
 							postHandler(err, sub.EndPointURI, d.Address)
 						} else {
@@ -285,6 +310,7 @@ func ProcessOutChannel(wg *sync.WaitGroup, scConfig *common.SCConfiguration) {
 					localmetrics.UpdateStatusAckCount(d.Address, localmetrics.FAILED)
 				}
 			} else if d.Type == channel.SUBSCRIBER { // these data are provided by HTTP transport
+				log.Infof("DZK scConfig.StorageType = %v", scConfig.StorageType)
 				if scConfig.StorageType != storageClient.ConfigMap {
 					continue
 				}

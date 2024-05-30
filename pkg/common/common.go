@@ -35,6 +35,7 @@ import (
 
 	"github.com/redhat-cne/cloud-event-proxy/pkg/restclient"
 	restapi "github.com/redhat-cne/rest-api"
+	v2restapi "github.com/redhat-cne/rest-api/v2"
 	"github.com/redhat-cne/sdk-go/pkg/channel"
 	ceevent "github.com/redhat-cne/sdk-go/pkg/event"
 	"github.com/redhat-cne/sdk-go/pkg/pubsub"
@@ -162,6 +163,7 @@ type SCConfiguration struct {
 	CloseCh           chan struct{}
 	APIPort           int
 	APIPath           string
+	APIVersion        string
 	PubSubAPI         *v1pubsub.API
 	StorePath         string
 	BaseURL           *types.URI
@@ -170,6 +172,7 @@ type SCConfiguration struct {
 	clientID          uuid.UUID
 	StorageType       storageClient.StorageTypeType
 	K8sClient         *storageClient.Client
+	RestAPI           *v2restapi.Server
 }
 
 // ClientID ... read clientID from the configurations
@@ -217,20 +220,37 @@ func GetBoolEnv(key string) bool {
 }
 
 // StartPubSubService starts rest api service to manage events publishers and subscriptions
-func StartPubSubService(scConfig *SCConfiguration) (*restapi.Server, error) {
+func StartPubSubService(scConfig *SCConfiguration) (err error) {
 	// init
 	if scConfig.TransportHost == nil {
 		scConfig.TransportHost.Type = UNKNOWN
 	}
-	server := restapi.InitServer(scConfig.APIPort, scConfig.APIPath,
-		scConfig.StorePath, scConfig.EventInCh, scConfig.CloseCh)
-	server.Start()
-	err := server.EndPointHealthChk()
-	if err == nil {
-		scConfig.BaseURL = server.GetHostPath()
-		scConfig.APIPort = server.Port()
+	if scConfig.APIVersion == "2.0" {
+		log.Infof("DZK starting V2 Rest API, scConfig.APIVersion=%s", scConfig.APIVersion)
+		// use EventOutCh instead since this is only used in producer side
+		server := v2restapi.InitServer(scConfig.APIPort, scConfig.APIPath,
+			scConfig.StorePath, scConfig.EventOutCh, scConfig.CloseCh, nil)
+		scConfig.RestAPI = server
+		server.Start()
+		err = server.EndPointHealthChk()
+		if err == nil {
+			scConfig.BaseURL = server.GetHostPath()
+			scConfig.APIPort = server.Port()
+		}
+	} else {
+		log.Infof("DZK starting V1 Rest API, scConfig.APIVersion=%s", scConfig.APIVersion)
+		server := restapi.InitServer(scConfig.APIPort, scConfig.APIPath,
+			scConfig.StorePath, scConfig.EventInCh, scConfig.CloseCh)
+
+		server.Start()
+		err = server.EndPointHealthChk()
+		if err == nil {
+			scConfig.BaseURL = server.GetHostPath()
+			scConfig.APIPort = server.Port()
+		}
+
 	}
-	return server, err
+	return err
 }
 
 // CreatePublisher creates a publisher objects
@@ -310,6 +330,25 @@ func PublishEvent(scConfig *SCConfiguration, e ceevent.Event) error {
 func PublishEventViaAPI(scConfig *SCConfiguration, cneEvent ceevent.Event) error {
 	if ceEvent, err := GetPublishingCloudEvent(scConfig, cneEvent); err == nil {
 		scConfig.EventInCh <- &channel.DataChan{
+			Type:     channel.EVENT,
+			Status:   channel.NEW,
+			Data:     ceEvent,
+			Address:  ceEvent.Source(), // this is te publishing address
+			ClientID: scConfig.ClientID(),
+		}
+
+		log.Debugf("event source %s sent to queue to process", ceEvent.Source())
+		log.Debugf("event sent %s", cneEvent.JSONString())
+
+		localmetrics.UpdateEventPublishedCount(ceEvent.Source(), localmetrics.SUCCESS, 1)
+	}
+	return nil
+}
+
+// PublishEventViaAPIV2 ... publish events by not using http transport
+func PublishEventViaAPIV2(scConfig *SCConfiguration, cneEvent ceevent.Event) error {
+	if ceEvent, err := GetPublishingCloudEvent(scConfig, cneEvent); err == nil {
+		scConfig.EventOutCh <- &channel.DataChan{
 			Type:     channel.EVENT,
 			Status:   channel.NEW,
 			Data:     ceEvent,

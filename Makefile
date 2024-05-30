@@ -102,9 +102,18 @@ undeploy-consumer:kustomize
 	cd ./examples/manifests  && $(KUSTOMIZE) edit set image cloud-event-sidecar=${IMG} && $(KUSTOMIZE) edit set image cloud-event-consumer=${CONSUMER_IMG}
 	$(KUSTOMIZE) build ./examples/manifests | kubectl delete -f -
 
+# Deploy all in the configured Kubernetes cluster in ~/.kube/config
+deploy-consumer-v2:kustomize
+	cd ./examples/manifests/v2 && $(KUSTOMIZE) edit set image cloud-event-consumer=${CONSUMER_IMG}
+	$(KUSTOMIZE) build ./examples/manifests/v2 | kubectl apply -f -
+
+# Deploy all in the configured Kubernetes cluster in ~/.kube/config
+undeploy-consumer-v2:kustomize
+	cd ./examples/manifests/v2 && $(KUSTOMIZE) edit set image cloud-event-consumer=${CONSUMER_IMG}
+	$(KUSTOMIZE) build ./examples/manifests/v2 | kubectl delete -f -
+
 # For GitHub Actions CI
 gha:
-	go build -a -o plugins/amqp_plugin.so -buildmode=plugin plugins/amqp/amqp_plugin.go
 	go build -a -o plugins/ptp_operator_plugin.so -buildmode=plugin plugins/ptp_operator/ptp_operator_plugin.go
 	go build -a -o plugins/mock_plugin.so -buildmode=plugin plugins/mock/mock_plugin.go
 	go build -a -o plugins/http_plugin.so -buildmode=plugin plugins/http/http_plugin.go
