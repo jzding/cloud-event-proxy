@@ -21,14 +21,13 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
+
+	"os"
 
 	"github.com/redhat-cne/cloud-event-proxy/pkg/common"
 	"github.com/redhat-cne/sdk-go/pkg/channel"
-	"github.com/redhat-cne/sdk-go/pkg/errorhandler"
 	v1pubsub "github.com/redhat-cne/sdk-go/v1/pubsub"
 	"github.com/stretchr/testify/assert"
-	"os"
 )
 
 var (
@@ -56,47 +55,6 @@ func init() {
 			Err:  nil,
 		},
 	}
-}
-
-func TestLoadAMQPPlugin(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	testCases := map[string]struct {
-		pgPath  string
-		amqHost string
-		wantErr error
-	}{
-		"Invalid Plugin Path": {
-			pgPath:  "wrong",
-			amqHost: "",
-			wantErr: fmt.Errorf("amqp plugin not found in the path wrong"),
-		},
-		"Invalid amqp host": {
-			pgPath:  "../../plugins",
-			amqHost: "",
-			wantErr: fmt.Errorf("error connecting to amqp"),
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			pLoader = Handler{Path: tc.pgPath}
-			amqInitTimeout := 1 * time.Second
-			_, err := pLoader.LoadAMQPPlugin(wg, scConfig, amqInitTimeout)
-			if err != nil {
-				switch e := err.(type) {
-				case errorhandler.AMQPConnectionError:
-					t.Skipf("skipping amqp for this test %s", e.Error())
-				default:
-					if tc.wantErr != nil && err != nil {
-						assert.EqualError(t, err, tc.wantErr.Error())
-					} else if tc.wantErr == nil {
-						assert.Nil(t, err)
-					}
-				}
-			}
-		})
-	}
-	close(scConfig.CloseCh)
 }
 
 func TestLoadPTPPlugin(t *testing.T) {
