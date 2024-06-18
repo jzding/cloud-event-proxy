@@ -136,7 +136,9 @@ func (p *API) GetFromPubStore(address string) (pubsub.PubSub, error) {
 
 // GetFromSubStore get data from subscription store
 func (p *API) GetFromSubStore(address string) (pubsub.PubSub, error) {
+	log.Infof("DZK GetFromSubStore address=%s", address)
 	for _, sub := range p.subStore.Store {
+		log.Infof("DZK GetFromSubStore sub=%v", sub)
 		if sub.GetResource() == address {
 			return pubsub.PubSub{
 				ID:          sub.ID,

@@ -58,7 +58,7 @@ func TestSidecar_MainWithHTTP(t *testing.T) {
 	log.Infof("Configuration set to %#v", scConfig)
 
 	//start rest service
-	_, err := common.StartPubSubService(scConfig)
+	err := common.StartPubSubService(scConfig)
 	assert.Nil(t, err)
 
 	// imitate main process

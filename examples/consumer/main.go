@@ -60,6 +60,7 @@ const (
 var (
 	apiAddr            = "localhost:8089"
 	apiPath            = "/api/ocloudNotifications/v1/"
+	apiVersion         = "1.0"
 	localAPIAddr       = "localhost:8989"
 	resourcePrefix     = "/cluster/node/%s%s"
 	mockResource       = "/mock"
@@ -67,13 +68,16 @@ var (
 	httpEventPublisher string
 	eventPublishers    = make(map[string]bool)
 	subs               []*pubsub.PubSub
+	isV1Api            bool
 )
 
 func main() {
 	common.InitLogger()
+	log.Info("DZK build version 06201540")
 	flag.StringVar(&localAPIAddr, "local-api-addr", "localhost:8989", "The address the local api binds to .")
 	flag.StringVar(&apiPath, "api-path", "/api/ocloudNotifications/v1/", "The rest api path.")
 	flag.StringVar(&apiAddr, "api-addr", "localhost:8089", "The address the framework api endpoint binds to.")
+	flag.StringVar(&apiVersion, "api-version", "1.0", "The version of Cloud Events Rest Api.")
 	flag.StringVar(&httpEventPublisher, "http-event-publishers", "", "Comma separated address of the publishers available.")
 	flag.Parse()
 
@@ -92,19 +96,25 @@ func main() {
 	} else {
 		consumerType = ConsumerTypeEnum(consumerTypeEnv)
 	}
+
+	isV1Api = common.IsV1Api(apiVersion)
+
+	if !isV1Api {
+		apiAddr = "ptp-event-publisher-service-NODE_NAME.openshift-ptp.svc.cluster.local:9043"
+		apiAddr = common.SanitizeTransportHost(apiAddr, nodeIP, nodeName)
+
+		apiPath = "/api/ocloudNotifications/v2/"
+		log.Infof("apiVersion=%s, updated apiAddr=%s, apiPath=%s", apiVersion, apiAddr, apiPath)
+	}
+
 	subscribeTo := initSubscribers(consumerType)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go server() // spin local api
 	time.Sleep(5 * time.Second)
 
-	// check consumer sidecar api health
-	healthURL := &types.URI{URL: url.URL{Scheme: "http",
-		Host: apiAddr,
-		Path: fmt.Sprintf("%s%s", apiPath, "health")}}
-RETRY:
-	if ok, _ := common.APIHealthCheck(healthURL, 2*time.Second); !ok {
-		goto RETRY
+	if isV1Api {
+		checkConsumerSidecarApiHealth()
 	}
 
 	for _, resource := range subscribeTo {
@@ -172,6 +182,16 @@ func deleteAllSubscriptions() {
 	rc.Delete(deleteURL)
 }
 
+func checkConsumerSidecarApiHealth() {
+	healthURL := &types.URI{URL: url.URL{Scheme: "http",
+		Host: apiAddr,
+		Path: fmt.Sprintf("%s%s", apiPath, "health")}}
+RETRY:
+	if ok, _ := common.APIHealthCheck(healthURL, 2*time.Second); !ok {
+		goto RETRY
+	}
+}
+
 func subscribeToEvents() {
 	// if AMQ enabled the subscription will create an AMQ listener client
 	// IF HTTP enabled, the subscription will post a subscription  requested to all
@@ -235,7 +255,13 @@ func getCurrentState(resource string) {
 func server() {
 	http.HandleFunc("/event", getEvent)
 	http.HandleFunc("/ack/event", ackEvent)
-	err := http.ListenAndServe(localAPIAddr, nil)
+	url := localAPIAddr
+	if !isV1Api {
+		// this provides consumer-events-subscription-service.cloud-events.svc.cluster.local:9043
+		url = ":9043"
+	}
+	log.Infof("Starting local API listening to %s", url)
+	err := http.ListenAndServe(url, nil)
 	if err != nil {
 		log.Errorf("error creating event server %s", err)
 	}
@@ -310,10 +336,13 @@ func getUUID(s string) uuid.UUID {
 }
 
 func publisherHealthCheck(apiAddr string) bool {
-	// check consumer sidecar api health
+	path := "health"
+	if !isV1Api {
+		path = fmt.Sprintf("%s%s", apiPath, "health")
+	}
 	healthURL := &types.URI{URL: url.URL{Scheme: "http",
 		Host: apiAddr,
-		Path: "health"}}
+		Path: path}}
 	ok, _ := common.APIHealthCheck(healthURL, 2*time.Second)
 	return ok
 }
@@ -330,6 +359,7 @@ func updateHTTPPublishers(nodeIP, nodeName string, addr ...string) {
 			log.Info("healthy publisher; subscribing to events")
 			subscribeToEvents()
 		}
+
 		log.Infof("publisher endpoint updated from %s to %s healthStatusOk %t", s, publisherServiceName, PublisherHealthOk)
 	}
 }
