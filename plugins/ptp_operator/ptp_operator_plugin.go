@@ -174,14 +174,16 @@ func Start(wg *sync.WaitGroup, configuration *common.SCConfiguration, _ func(e i
 			log.Error("could not set receiver for http ")
 		}
 	}
+	if !common.IsV1Api(config.APIVersion) {
+		config.RestAPI.SetOnStatusReceiveOverrideFn(onReceiveOverrideFn)
+	}
 	return nil
 }
 
-// getCurrentStatOverrideFn is called when current state is received by rest api
+// getCurrentStatOverrideFn is called when GET CurrentState request is received by rest api
 func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 	return func(e v2.Event, d *channel.DataChan) error {
 		if e.Source() != "" {
-			log.Infof("setting return address to %s", e.Source())
 			d.ReturnAddress = pointer.String(e.Source())
 		}
 		log.Infof("got status check call,send events for subscriber %s => %s", d.ClientID.String(), e.Source())
@@ -200,6 +202,7 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 		}
 		if len(eventManager.Stats) == 0 {
 			data := eventManager.GetPTPEventsData(ptp.FREERUN, 0, "ptp-not-set", eventType)
+			data.SetVersion(config.APIVersion)
 			d.Data = eventManager.GetPTPCloudEvents(*data, eventType)
 			return nil
 		}
@@ -208,6 +211,7 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 		processDataFn := func(data, d *event.Data) *event.Data {
 			if data == nil {
 				data = d
+				data.SetVersion(config.APIVersion)
 			} else if d != nil {
 				data.Values = append(data.Values, d.Values...)
 			}
@@ -255,9 +259,11 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 			}
 		}
 		if data != nil {
+			data.SetVersion(config.APIVersion)
 			d.Data = eventManager.GetPTPCloudEvents(*data, eventType)
 		} else {
 			data = eventManager.GetPTPEventsData(ptp.FREERUN, 0, "event-not-found", eventType)
+			data.SetVersion(config.APIVersion)
 			d.Data = eventManager.GetPTPCloudEvents(*data, eventType)
 			log.Errorf("could not find any events for requested resource type %s", e.Source())
 			return nil
@@ -465,7 +471,7 @@ func processPtp4lConfigFileUpdates() {
 func createPublisher(address string) (pub pubsub.PubSub, err error) {
 	// this is loop back on server itself. Since current pod does not create any server
 	returnURL := fmt.Sprintf("%s%s", config.BaseURL, "dummy")
-	pubToCreate := v1pubs.NewPubSub(types.ParseURI(returnURL), address)
+	pubToCreate := v1pubs.NewPubSub(types.ParseURI(returnURL), address, config.APIVersion)
 	pub, err = common.CreatePublisher(config, pubToCreate)
 	if err != nil {
 		log.Errorf("failed to create publisher %v", pub)
