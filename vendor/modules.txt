@@ -210,6 +210,7 @@ github.com/redhat-cne/sdk-go/v1/event
 github.com/redhat-cne/sdk-go/v1/http
 github.com/redhat-cne/sdk-go/v1/pubsub
 github.com/redhat-cne/sdk-go/v1/subscriber
+github.com/redhat-cne/sdk-go/v2/pubsub
 # github.com/sirupsen/logrus v1.9.0
 ## explicit; go 1.13
 github.com/sirupsen/logrus

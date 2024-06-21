@@ -35,6 +35,7 @@ import (
 	"github.com/redhat-cne/sdk-go/pkg/pubsub"
 	"github.com/redhat-cne/sdk-go/pkg/types"
 	v1pubsub "github.com/redhat-cne/sdk-go/v1/pubsub"
+	v2pubsub "github.com/redhat-cne/sdk-go/v2/pubsub"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -69,6 +70,7 @@ var (
 	eventPublishers    = make(map[string]bool)
 	subs               []*pubsub.PubSub
 	isV1Api            bool
+	createPubSubFn     func(endPointURI *types.URI, resource string) pubsub.PubSub
 )
 
 func main() {
@@ -105,6 +107,9 @@ func main() {
 
 		apiPath = "/api/ocloudNotifications/v2/"
 		log.Infof("apiVersion=%s, updated apiAddr=%s, apiPath=%s", apiVersion, apiAddr, apiPath)
+		createPubSubFn = v2pubsub.NewPubSub
+	} else {
+		createPubSubFn = v1pubsub.NewPubSub
 	}
 
 	subscribeTo := initSubscribers(consumerType)
@@ -220,7 +225,7 @@ func createSubscription(resourceAddress string) (sub pubsub.PubSub, err error) {
 		Host: localAPIAddr,
 		Path: "event"}}
 
-	sub = v1pubsub.NewPubSub(endpointURL, resourceAddress)
+	sub = createPubSubFn(endpointURL, resourceAddress)
 	var subB []byte
 
 	if subB, err = json.Marshal(&sub); err == nil {

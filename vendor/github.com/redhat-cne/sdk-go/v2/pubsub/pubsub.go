@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -42,6 +43,41 @@ type API struct {
 var instance *API
 var once sync.Once
 var mu sync.Mutex
+
+// PubSub represents the canonical representation of a Cloud Native Event Publisher and Sender .
+// PubSub Json request payload is as follows,
+//
+//	{
+//	 "SubscriptionId": "789be75d-7ac3-472e-bbbc-6d62878aad4a",
+//	 "EndpointUri": "http://localhost:9090/ack/event",
+//	 "UriLocation":  "http://localhost:8080/api/ocloudNotifications/v1/publishers/{publisherid}",
+//	 "ResourceAddress":  "/east-edge-10/vdu3/o-ran-sync/sync-group/sync-status/sync-state"
+//	}
+//
+// PubSub request model
+type PubSub struct {
+	// ID of the pub/sub; is updated on successful creation of publisher/subscription.
+	ID string `json:"SubscriptionId" omit:"empty"`
+	// EndPointURI - A URI describing the event action link.
+	// +required
+	EndPointURI *types.URI `json:"EndpointUri" example:"http://localhost:9090/ack/event" omit:"empty"`
+
+	// URILocation - A URI describing the producer/subscription get link.
+	URILocation *types.URI `json:"UriLocation" omit:"empty"`
+	// Resource - The type of the Resource.
+	// +required
+	Resource string `json:"ResourceAddress" example:"/east-edge-10/vdu3/o-ran-sync/sync-group/sync-status/sync-state"`
+}
+
+// String returns a pretty-printed representation of the Event.
+func (ps *PubSub) String() string {
+	b := strings.Builder{}
+	b.WriteString("  EndpointURI: " + ps.GetEndpointURI() + "\n")
+	b.WriteString("  URILocation: " + ps.GetURILocation() + "\n")
+	b.WriteString("  ID: " + ps.GetID() + "\n")
+	b.WriteString("  Resource: " + ps.GetResource() + "\n")
+	return b.String()
+}
 
 // NewPubSub create new publisher or subscriber
 func NewPubSub(endPointURI *types.URI, resource string) pubsub.PubSub {
