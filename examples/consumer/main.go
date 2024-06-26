@@ -88,7 +88,8 @@ func main() {
 		nodeName = mockResourceKey
 	}
 
-	enableStatusCheck := common.GetBoolEnv("ENABLE_STATUS_CHECK")
+	//DZK enableStatusCheck := common.GetBoolEnv("ENABLE_STATUS_CHECK")
+	enableStatusCheck := false
 
 	consumerTypeEnv := os.Getenv("CONSUMER_TYPE")
 	if consumerTypeEnv == "" {
@@ -327,9 +328,9 @@ func initSubscribers(cType ConsumerTypeEnum) map[string]string {
 	subscribeTo := make(map[string]string)
 	switch cType {
 	case PTP:
-		subscribeTo[string(ptpEvent.OsClockSyncStateChange)] = string(ptpEvent.OsClockSyncState)
-		subscribeTo[string(ptpEvent.PtpClockClassChange)] = string(ptpEvent.PtpClockClass)
-		subscribeTo[string(ptpEvent.PtpStateChange)] = string(ptpEvent.PtpLockState)
+		//DZK subscribeTo[string(ptpEvent.OsClockSyncStateChange)] = string(ptpEvent.OsClockSyncState)
+		//DZK subscribeTo[string(ptpEvent.PtpClockClassChange)] = string(ptpEvent.PtpClockClass)
+		//DZK subscribeTo[string(ptpEvent.PtpStateChange)] = string(ptpEvent.PtpLockState)
 		subscribeTo[string(ptpEvent.GnssStateChange)] = string(ptpEvent.GnssSyncStatus)
 	case MOCK:
 		subscribeTo[mockResourceKey] = mockResource

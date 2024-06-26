@@ -5,8 +5,8 @@
 VERSION ?=latest
 # Default image tag
 
-IMG ?= quay.io/jacding/cloud-event-proxy:sub2
-CONSUMER_IMG ?= quay.io/jacding/cloud-event-consumer:sub2
+IMG ?= quay.io/jacding/cloud-event-proxy:sub2-demo
+CONSUMER_IMG ?= quay.io/jacding/cloud-event-consumer:sub2-demo
 
 export GO111MODULE=on
 export CGO_ENABLED=1
