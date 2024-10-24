@@ -2,11 +2,11 @@
 
 #for examples
 # Current  version
-VERSION ?=latest
+VERSION ?=4.19
 # Default image tag
 
-IMG ?= quay.io/openshift/origin-cloud-event-proxy:$(VERSION)
-CONSUMER_IMG ?= quay.io/redhat-cne/cloud-event-consumer:$(VERSION)
+IMG ?= quay.io/jacding/cloud-event-proxy:$(VERSION)
+CONSUMER_IMG ?= quay.io/jacding/cloud-event-consumer:$(VERSION)
 
 export GO111MODULE=on
 export CGO_ENABLED=1
@@ -124,16 +124,16 @@ gha:
 	GO111MODULE=off STORE_PATH=/tmp/sub-store go test ./... --tags=unittests -coverprofile=cover.out
 
 docker-build: #test ## Build docker image with the manager.
-	docker build --no-cache -t ${IMG} .
+	podman build -f Dockerfile -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	podman push ${IMG}
 
 docker-build-consumer: #test ## Build docker image with the manager.
-	docker build -f ./examples/consumer.Dockerfile -t ${CONSUMER_IMG} .
+	podman build -f ./examples/consumer.Dockerfile -t ${CONSUMER_IMG} .
 
 docker-push-consumer: ## Push docker image with the manager.
-	docker push ${CONSUMER_IMG}
+	podman push ${CONSUMER_IMG}
 
 podman-build: #test ## Build docker image with the manager.
 	podman build --no-cache -t ${IMG} .
