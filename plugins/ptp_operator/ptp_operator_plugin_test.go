@@ -27,6 +27,7 @@ import (
 
 	"github.com/redhat-cne/cloud-event-proxy/pkg/common"
 	"github.com/redhat-cne/cloud-event-proxy/pkg/plugins"
+	"github.com/redhat-cne/cloud-event-proxy/plugins/ptp_operator/stats"
 	ptpTypes "github.com/redhat-cne/cloud-event-proxy/plugins/ptp_operator/types"
 	restapi "github.com/redhat-cne/rest-api"
 	"github.com/redhat-cne/sdk-go/pkg/channel"
@@ -137,6 +138,73 @@ func Test_StartWithHTTP(t *testing.T) {
 	assert.Equal(t, 7, len(pubs))
 	subs := scConfig.PubSubAPI.GetSubscriptions()
 	assert.Equal(t, 7, len(subs))
+}
+
+// Lock matches the structure from the plugin code
+type Lock struct {
+	sync.Mutex
+	CurrentPTPStats map[string]*stats.Statistics
+}
+
+func TestGetCurrentStatOverrideFn_EmptyNodeName(t *testing.T) {
+	lock := &Lock{
+		CurrentPTPStats: map[string]*stats.Statistics{
+			"existingKey": {Offset: 42},
+		},
+	}
+
+	overrideFn := getCurrentStatOverrideFn("", "eth0", lock)
+	testStats := &stats.Statistics{Offset: 100}
+	overrideFn(testStats)
+
+	if len(lock.CurrentPTPStats) != 1 {
+		t.Fatalf("Expected 1 entry, got %d", len(lock.CurrentPTPStats))
+	}
+	if stats, exists := lock.CurrentPTPStats["existingKey"]; !exists || stats.Offset != 42 {
+		t.Error("Existing data was modified unexpectedly")
+	}
+}
+
+func TestGetCurrentStatOverrideFn_ValidNodeName(t *testing.T) {
+	lock := &Lock{CurrentPTPStats: make(map[string]*stats.Statistics)}
+	nodeName := "node1"
+	ifName := "eth0"
+	expectedKey := nodeName + ifName
+
+	overrideFn := getCurrentStatOverrideFn(nodeName, ifName, lock)
+	testStats := &stats.Statistics{Offset: 100}
+	overrideFn(testStats)
+
+	if len(lock.CurrentPTPStats) != 1 {
+		t.Fatalf("Expected 1 entry, got %d", len(lock.CurrentPTPStats))
+	}
+	if actualStats, exists := lock.CurrentPTPStats[expectedKey]; !exists || actualStats.Offset != 100 {
+		t.Errorf("Stats not stored correctly, got %v", actualStats)
+	}
+}
+
+func TestGetCurrentStatOverrideFn_InterfaceVariations(t *testing.T) {
+	lock := &Lock{CurrentPTPStats: make(map[string]*stats.Statistics)}
+	nodeName := "node1"
+
+	testCases := []struct {
+		iface     string
+		offset    int64
+		expectKey string
+	}{
+		{"eth0", 100, "node1eth0"},
+		{"eth1", 200, "node1eth1"},
+		{"", 300, "node1"},
+	}
+
+	for _, tc := range testCases {
+		overrideFn := getCurrentStatOverrideFn(nodeName, tc.iface, lock)
+		overrideFn(&stats.Statistics{Offset: tc.offset})
+
+		if stats, exists := lock.CurrentPTPStats[tc.expectKey]; !exists || stats.Offset != tc.offset {
+			t.Errorf("Failed for interface '%s': exists=%t, offset=%d", tc.iface, exists, stats.Offset)
+		}
+	}
 }
 
 // ProcessInChannel will be  called if Transport is disabled
