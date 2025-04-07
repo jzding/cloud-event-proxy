@@ -319,7 +319,7 @@ func (p *PTPEventManager) GetPTPCloudEvents(data ceevent.Data, eventType ptp.Eve
 			path.Join(p.resourcePrefix, p.nodeName, string(p.publisherTypes[eventType].Resource)),
 			data)
 		if cneErr != nil {
-			return nil, fmt.Errorf("failed to create ptp event, %s", cneErr)
+			return nil, fmt.Errorf("failed to create ptp event for type %s PubID %s Resource %s, %s", string(eventType), pubs.PubID, string(p.publisherTypes[eventType].Resource), cneErr)
 		}
 		ceEvent, err := common.GetPublishingCloudEvent(p.scConfig, cneEvent)
 		if err != nil {
