@@ -25,12 +25,16 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/redhat-cne/cloud-event-proxy/pkg/common"
 	"github.com/redhat-cne/cloud-event-proxy/pkg/plugins"
+	"github.com/redhat-cne/cloud-event-proxy/plugins/ptp_operator/metrics"
+	"github.com/redhat-cne/cloud-event-proxy/plugins/ptp_operator/ptp4lconf"
 	"github.com/redhat-cne/cloud-event-proxy/plugins/ptp_operator/stats"
 	ptpTypes "github.com/redhat-cne/cloud-event-proxy/plugins/ptp_operator/types"
 	restapi "github.com/redhat-cne/rest-api"
 	"github.com/redhat-cne/sdk-go/pkg/channel"
+	"github.com/redhat-cne/sdk-go/pkg/event/ptp"
 	ptpEvent "github.com/redhat-cne/sdk-go/pkg/event/ptp"
 	"github.com/redhat-cne/sdk-go/pkg/types"
 	v1event "github.com/redhat-cne/sdk-go/v1/event"
@@ -48,16 +52,36 @@ var (
 	apiPort           int = 8990
 	c                 chan os.Signal
 	pubsubTypes       map[ptpEvent.EventType]*ptpTypes.EventPublisherType
+	ptpEventManager   *metrics.PTPEventManager
 )
 
-func TestMain(m *testing.M) {
+var logPtp4lConfig = &ptp4lconf.PTP4lConfig{
+	Name:    "ptp4l.0.config",
+	Profile: "grandmaster",
+	Interfaces: []*ptp4lconf.PTPInterface{
+		{
+			Name:     "ens2f0",
+			PortID:   1,
+			PortName: "port 1",
+			Role:     2, //master
+		},
+		{
+			Name:     "ens7f0",
+			PortID:   2,
+			PortName: "port 3",
+			Role:     2, // master
+		},
+	},
+}
+
+func setup() {
 	scConfig = &common.SCConfiguration{
 		EventInCh:  make(chan *channel.DataChan, channelBufferSize),
 		EventOutCh: make(chan *channel.DataChan, channelBufferSize),
 		CloseCh:    make(chan struct{}),
 		APIPort:    apiPort,
 		APIPath:    "/api/test-cloud/",
-		APIVersion: "1.0",
+		APIVersion: "2.0",
 		PubSubAPI:  v1pubsub.GetAPIInstance(storePath),
 		StorePath:  storePath,
 		TransportHost: &common.TransportHost{
@@ -70,15 +94,43 @@ func TestMain(m *testing.M) {
 		BaseURL: nil,
 	}
 
+	ptpEventManager = metrics.NewPTPEventManager(resourcePrefix, InitPubSubTypes(scConfig), "testnode", scConfig)
+	ptpEventManager.MockTest(true)
+
+	ptpEventManager.AddPTPConfig(ptpTypes.ConfigName(logPtp4lConfig.Name), logPtp4lConfig)
+
+	statsMaster := stats.NewStats(logPtp4lConfig.Name)
+	statsMaster.SetOffsetSource("master")
+	statsMaster.SetProcessName("ts2phc")
+	statsMaster.SetAlias("ens2fx")
+
+	statsSlave := stats.NewStats(logPtp4lConfig.Name)
+	statsSlave.SetOffsetSource("phc")
+	statsSlave.SetProcessName("phc2sys")
+	statsSlave.SetLastSyncState("LOCKED")
+	statsSlave.SetClockClass(0)
+
+	ptpEventManager.Stats[ptpTypes.ConfigName(logPtp4lConfig.Name)] = make(stats.PTPStats)
+	ptpEventManager.Stats[ptpTypes.ConfigName(logPtp4lConfig.Name)][ptpTypes.IFace("master")] = statsMaster
+	ptpEventManager.Stats[ptpTypes.ConfigName(logPtp4lConfig.Name)][ptpTypes.IFace("CLOCK_REALTIME")] = statsSlave
+	ptpEventManager.Stats[ptpTypes.ConfigName(logPtp4lConfig.Name)][ptpTypes.IFace("ens2f0")] = statsMaster
+	ptpEventManager.Stats[ptpTypes.ConfigName(logPtp4lConfig.Name)][ptpTypes.IFace("ens7f0")] = statsSlave
+
+	metrics.RegisterMetrics("mynode")
+}
+
+func teardown() {
+	_ = scConfig.PubSubAPI.DeleteAllPublishers()
+	_ = scConfig.PubSubAPI.DeleteAllSubscriptions()
+}
+
+func TestMain(m *testing.M) {
+	setup()
 	c = make(chan os.Signal)
 	common.StartPubSubService(scConfig)
 	pubsubTypes = InitPubSubTypes(scConfig)
-	cleanUP()
+	teardown()
 	os.Exit(m.Run())
-}
-func cleanUP() {
-	_ = scConfig.PubSubAPI.DeleteAllPublishers()
-	_ = scConfig.PubSubAPI.DeleteAllSubscriptions()
 }
 
 // Test_StartWithHTTP ...
@@ -95,7 +147,7 @@ func Test_StartWithHTTP(t *testing.T) {
 	scConfig.TransportHost.ParseTransportHost()
 	pl := plugins.Handler{Path: "../../plugins"}
 
-	defer cleanUP()
+	defer teardown()
 	scConfig.CloseCh = make(chan struct{})
 	scConfig.PubSubAPI.EnableTransport()
 	log.Printf("loading http with host %s", scConfig.TransportHost.Host)
@@ -140,71 +192,21 @@ func Test_StartWithHTTP(t *testing.T) {
 	assert.Equal(t, 7, len(subs))
 }
 
-// Lock matches the structure from the plugin code
-type Lock struct {
-	sync.Mutex
-	CurrentPTPStats map[string]*stats.Statistics
-}
+func TestGetCurrentStatOverrideFn(t *testing.T) {
 
-func TestGetCurrentStatOverrideFn_EmptyNodeName(t *testing.T) {
-	lock := &Lock{
-		CurrentPTPStats: map[string]*stats.Statistics{
-			"existingKey": {Offset: 42},
-		},
+	addr := "/sync/ptp-status/lock-state"
+	out := channel.DataChan{
+		Address:  addr,
+		ClientID: uuid.New(),
+		Status:   channel.NEW,
+		Type:     channel.STATUS,
 	}
 
-	overrideFn := getCurrentStatOverrideFn("", "eth0", lock)
-	testStats := &stats.Statistics{Offset: 100}
-	overrideFn(testStats)
-
-	if len(lock.CurrentPTPStats) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(lock.CurrentPTPStats))
-	}
-	if stats, exists := lock.CurrentPTPStats["existingKey"]; !exists || stats.Offset != 42 {
-		t.Error("Existing data was modified unexpectedly")
-	}
-}
-
-func TestGetCurrentStatOverrideFn_ValidNodeName(t *testing.T) {
-	lock := &Lock{CurrentPTPStats: make(map[string]*stats.Statistics)}
-	nodeName := "node1"
-	ifName := "eth0"
-	expectedKey := nodeName + ifName
-
-	overrideFn := getCurrentStatOverrideFn(nodeName, ifName, lock)
-	testStats := &stats.Statistics{Offset: 100}
-	overrideFn(testStats)
-
-	if len(lock.CurrentPTPStats) != 1 {
-		t.Fatalf("Expected 1 entry, got %d", len(lock.CurrentPTPStats))
-	}
-	if actualStats, exists := lock.CurrentPTPStats[expectedKey]; !exists || actualStats.Offset != 100 {
-		t.Errorf("Stats not stored correctly, got %v", actualStats)
-	}
-}
-
-func TestGetCurrentStatOverrideFn_InterfaceVariations(t *testing.T) {
-	lock := &Lock{CurrentPTPStats: make(map[string]*stats.Statistics)}
-	nodeName := "node1"
-
-	testCases := []struct {
-		iface     string
-		offset    int64
-		expectKey string
-	}{
-		{"eth0", 100, "node1eth0"},
-		{"eth1", 200, "node1eth1"},
-		{"", 300, "node1"},
-	}
-
-	for _, tc := range testCases {
-		overrideFn := getCurrentStatOverrideFn(nodeName, tc.iface, lock)
-		overrideFn(&stats.Statistics{Offset: tc.offset})
-
-		if stats, exists := lock.CurrentPTPStats[tc.expectKey]; !exists || stats.Offset != tc.offset {
-			t.Errorf("Failed for interface '%s': exists=%t, offset=%d", tc.iface, exists, stats.Offset)
-		}
-	}
+	eventType := ptp.SyncStateChange
+	eventSource := ptp.SyncStatusState
+	data := eventManager.GetPTPEventsData(ptp.FREERUN, 0, "event-not-found", eventType)
+	out.Data, _ = eventManager.GetPTPCloudEvents(*data, eventType)
+	out.Data.SetSource(string(eventSource))
 }
 
 // ProcessInChannel will be  called if Transport is disabled

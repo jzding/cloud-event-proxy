@@ -383,7 +383,7 @@ var testCases = []TestCase{
 }
 
 func setup() {
-	ptpEventManager = metrics.NewPTPEventManager(resourcePrefix, InitPubSubTypes(), "tetsnode", scConfig)
+	ptpEventManager = metrics.NewPTPEventManager(resourcePrefix, InitPubSubTypes(), "testnode", scConfig)
 	ptpEventManager.MockTest(true)
 
 	ptpEventManager.AddPTPConfig(types.ConfigName(logPtp4lConfig.Name), logPtp4lConfig)
