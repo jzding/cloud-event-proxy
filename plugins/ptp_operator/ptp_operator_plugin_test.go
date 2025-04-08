@@ -33,6 +33,7 @@ import (
 	ptpEvent "github.com/redhat-cne/sdk-go/pkg/event/ptp"
 	"github.com/redhat-cne/sdk-go/pkg/types"
 	v1event "github.com/redhat-cne/sdk-go/v1/event"
+	subscriberApi "github.com/redhat-cne/sdk-go/v1/subscriber"
 	"github.com/stretchr/testify/assert"
 
 	v1pubsub "github.com/redhat-cne/sdk-go/v1/pubsub"
@@ -51,14 +52,15 @@ var (
 
 func TestMain(m *testing.M) {
 	scConfig = &common.SCConfiguration{
-		EventInCh:  make(chan *channel.DataChan, channelBufferSize),
-		EventOutCh: make(chan *channel.DataChan, channelBufferSize),
-		CloseCh:    make(chan struct{}),
-		APIPort:    apiPort,
-		APIPath:    "/api/test-cloud/",
-		APIVersion: "1.0",
-		PubSubAPI:  v1pubsub.GetAPIInstance(storePath),
-		StorePath:  storePath,
+		EventInCh:     make(chan *channel.DataChan, channelBufferSize),
+		EventOutCh:    make(chan *channel.DataChan, channelBufferSize),
+		CloseCh:       make(chan struct{}),
+		APIPort:       apiPort,
+		APIPath:       "/api/test-cloud/",
+		APIVersion:    "1.0",
+		PubSubAPI:     v1pubsub.GetAPIInstance(storePath),
+		SubscriberAPI: subscriberApi.GetAPIInstance(storePath),
+		StorePath:     storePath,
 		TransportHost: &common.TransportHost{
 			Type: common.HTTP,
 			URL:  "localhost:8089",
