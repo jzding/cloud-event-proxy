@@ -5,8 +5,8 @@
 VERSION ?=latest
 # Default image tag
 
-IMG ?= quay.io/openshift/origin-cloud-event-proxy:$(VERSION)
-CONSUMER_IMG ?= quay.io/redhat-cne/cloud-event-consumer:$(VERSION)
+IMG ?= quay.io/jacding/cloud-event-proxy:4.18
+CONSUMER_IMG ?= quay.io/jacding/cloud-event-consumer:4.18
 
 export GO111MODULE=on
 export CGO_ENABLED=1
@@ -99,11 +99,11 @@ functests:
 
 # Deploy all in the configured Kubernetes cluster in ~/.kube/config
 deploy-consumer:kustomize
-	cd ./examples/manifests && $(KUSTOMIZE) edit set image cloud-event-sidecar=${IMG} && $(KUSTOMIZE) edit set image cloud-event-consumer=${CONSUMER_IMG}
+	cd ./examples/manifests && $(KUSTOMIZE) edit set image cloud-event-sidecar="${IMG}" && $(KUSTOMIZE) edit set image cloud-event-consumer="${CONSUMER_IMG}"
 	$(KUSTOMIZE) build ./examples/manifests | kubectl apply -f -
 
 undeploy-consumer:kustomize
-	cd ./examples/manifests  && $(KUSTOMIZE) edit set image cloud-event-sidecar=${IMG} && $(KUSTOMIZE) edit set image cloud-event-consumer=${CONSUMER_IMG}
+	cd ./examples/manifests  && $(KUSTOMIZE) edit set image cloud-event-sidecar="${IMG}" && $(KUSTOMIZE) edit set image cloud-event-consumer="${CONSUMER_IMG}"
 	$(KUSTOMIZE) build ./examples/manifests | kubectl delete -f -
 
 deploy-consumer-v2:kustomize
