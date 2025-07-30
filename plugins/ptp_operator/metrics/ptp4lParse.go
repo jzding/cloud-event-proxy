@@ -25,6 +25,7 @@ func (p *PTPEventManager) ParsePTP4l(processName, configName, profileName, outpu
 	ptpInterface ptp4lconf.PTPInterface, ptp4lCfg *ptp4lconf.PTP4lConfig, ptpStats stats.PTPStats) {
 	var err error
 	if strings.Contains(output, classChangeIdentifier) {
+		log.Debugf("DZK Processing clock class change event")
 		if len(fields) < 5 {
 			log.Errorf("clock class not in right format %s", output)
 			return
@@ -47,7 +48,8 @@ func (p *PTPEventManager) ParsePTP4l(processName, configName, profileName, outpu
 
 			ClockClassMetrics.With(prometheus.Labels{
 				"process": processName, "node": ptpNodeName}).Set(clockClass)
-			if ptpStats[master].ClockClass() != int64(clockClass) {
+			// if clock class has never been set, or it is not the same as the one reported by ptp4l, update the clock class
+			if ptpStats[master].ClockClass() != int64(clockClass) || !ptpStats[master].IsClockClassSet() {
 				ptpStats[master].SetClockClass(int64(clockClass))
 				p.PublishClockClassEvent(clockClass, masterResource, ptp.PtpClockClassChange)
 			}

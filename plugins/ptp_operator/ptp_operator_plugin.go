@@ -59,6 +59,8 @@ const (
 	ClockRealTime = "CLOCK_REALTIME"
 	// MasterClockType is the slave sync slave clock to master
 	MasterClockType = "master"
+	EventNotFound   = "event-not-found"
+	PTPNotSet       = "ptp-not-set"
 )
 
 var (
@@ -211,7 +213,7 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 			return fmt.Errorf("could not find any events for requested resource type %s", e.Source())
 		}
 		if len(eventManager.Stats) == 0 {
-			data := eventManager.GetPTPEventsData(ptp.FREERUN, 0, "ptp-not-set", eventType)
+			data := eventManager.GetPTPEventsData(ptp.FREERUN, 0, PTPNotSet, eventType)
 			d.Data, err = eventManager.GetPTPCloudEvents(*data, eventType)
 			if err != nil {
 				return err
@@ -233,6 +235,13 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 		var overallSyncState ptp.SyncState
 		for config := range eventManager.Stats { // configname->PTPStats
 			for ptpInterface, s := range eventManager.GetStats(config) { // iface->stats
+				// log.Debugf("DZK Processing PTP event for %s - stats populated (syncState=%t, offset=%t, clockClass=%t)",
+				// 	string(ptpInterface), s.IsLastSyncStateSet(), s.IsLastOffsetSet(), s.IsClockClassSet())
+				if !s.IsLastSyncStateSet() || !s.IsLastOffsetSet() {
+					log.Debugf("Skipping PTP event for %s - stats not populated yet (syncState=%t, offset=%t)",
+						string(ptpInterface), s.IsLastSyncStateSet(), s.IsLastOffsetSet())
+					continue
+				}
 				switch ptpInterface {
 				case ptpMetrics.MasterClockType:
 					if s.Alias() != "" {
@@ -243,8 +252,13 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 						// if its master stats then replace with slave interface(masked) +X
 						data = processDataFn(data, eventManager.GetPTPEventsData(s.SyncState(), s.LastOffset(), string(ptpInterface), eventType))
 					case ptp.PtpClockClassChange:
-						clockClass := fmt.Sprintf("%s/%s", string(ptpInterface), ptpMetrics.ClockClass)
-						data = processDataFn(data, eventManager.GetPTPEventsData(s.SyncState(), s.ClockClass(), clockClass, eventType))
+						if s.IsClockClassSet() {
+							log.Debugf("DZK Processing PTP clock class event for %s - stats populated (syncState=%t, clockClass=%t), syncState=%s, clockClass=%d", string(ptpInterface), s.IsLastSyncStateSet(), s.IsClockClassSet(), s.SyncState(), s.ClockClass())
+							clockClass := fmt.Sprintf("%s/%s", string(ptpInterface), ptpMetrics.ClockClass)
+							data = processDataFn(data, eventManager.GetPTPEventsData(s.SyncState(), s.ClockClass(), clockClass, eventType))
+						} else {
+							log.Debugf("Skipping PTP clock class event for %s - clockClass not populated yet", string(ptpInterface))
+						}
 					case ptp.SyncStateChange:
 						overallSyncState = getOverallState(overallSyncState, s.SyncState())
 					}
@@ -327,7 +341,7 @@ func getCurrentStatOverrideFn() func(e v2.Event, d *channel.DataChan) error {
 			}
 			d.Data.SetSource(string(eventSource))
 		} else {
-			data = eventManager.GetPTPEventsData(ptp.FREERUN, 0, "event-not-found", eventType)
+			data = eventManager.GetPTPEventsData(ptp.FREERUN, 0, EventNotFound, eventType)
 			d.Data, err = eventManager.GetPTPCloudEvents(*data, eventType)
 			if err != nil {
 				return err
