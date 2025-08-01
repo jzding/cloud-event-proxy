@@ -39,6 +39,8 @@ type Stats struct {
 	ptpDependentEventState *event.PTPEventState
 	configDeleted          bool
 	syncE                  *SyncEStats // device name is the key
+	clockClassSet          bool
+	lastOffsetSet          bool
 }
 
 // SyncEStats collects stats for synceE
@@ -132,11 +134,6 @@ func (s *Stats) SetAlias(val string) {
 	s.aliasName = val
 }
 
-// SyncState return last known SyncState state
-func (s *Stats) SyncState() ptp.SyncState {
-	return s.lastSyncState
-}
-
 // ConfigName ...get config name
 func (s *Stats) ConfigName() string {
 	return s.configName
@@ -159,6 +156,8 @@ func (s *Stats) reset() { //nolint:unused
 	s.processName = ""
 	s.lastOffset = 0
 	s.offsetSource = ""
+	s.clockClassSet = false
+	s.lastOffsetSet = false
 }
 
 // NewStats ... create new stats
@@ -178,17 +177,29 @@ func (s *Stats) SetDelay(val int64) {
 
 // SetLastOffset ... set last offset value
 func (s *Stats) SetLastOffset(val int64) {
+	s.lastOffsetSet = true
 	s.lastOffset = val
 }
 
 // SetClockClass ... set last clock class value
 func (s *Stats) SetClockClass(val int64) {
+	s.clockClassSet = true
 	s.clockClass = val
 }
 
 // SetLastSyncState ... set last sync state
 func (s *Stats) SetLastSyncState(val ptp.SyncState) {
 	s.lastSyncState = val
+}
+
+// IsClockClassSet ... check if clock class is set
+func (s *Stats) IsClockClassSet() bool {
+	return s.clockClassSet
+}
+
+// IsLastOffsetSet ... check if last offset is set
+func (s *Stats) IsLastOffsetSet() bool {
+	return s.lastOffsetSet
 }
 
 // FrequencyAdjustment ... get frequency adjustment value

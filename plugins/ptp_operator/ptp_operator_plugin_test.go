@@ -340,6 +340,7 @@ type statsData struct {
 	iface       string
 	processName string
 	syncState   ptpEvent.SyncState
+	offset      int64
 }
 
 func getStats(statsData []statsData, depsClockState []event2.ClockState) map[ptpTypes.ConfigName]stats.PTPStats {
@@ -356,6 +357,7 @@ func getStats(statsData []statsData, depsClockState []event2.ClockState) map[ptp
 			s[ptpTypes.ConfigName(statsObj.configName)][ptpTypes.IFace(statsObj.clockType)].SetAlias(statsObj.alias)
 			s[ptpTypes.ConfigName(statsObj.configName)][ptpTypes.IFace(statsObj.clockType)].SetProcessName(statsObj.processName)
 			s[ptpTypes.ConfigName(statsObj.configName)][ptpTypes.IFace(statsObj.clockType)].SetLastSyncState(statsObj.syncState)
+			s[ptpTypes.ConfigName(statsObj.configName)][ptpTypes.IFace(statsObj.clockType)].SetLastOffset(statsObj.offset)
 
 			// Loop through depsClockState and call SetPtpDependentEventState for each ClockState
 			if index == 0 {
