@@ -31,17 +31,14 @@ type Stats struct {
 	sumDiffSqr             int64
 	frequencyAdjustment    int64
 	delay                  int64
-	lastOffset             int64
-	lastSyncState          ptp.SyncState
+	lastOffset             *int64
+	lastSyncState          *ptp.SyncState
 	aliasName              string
-	clackClass             int64
+	clackClass             *int64
 	role                   types.PtpPortRole
 	ptpDependentEventState *event.PTPEventState
 	configDeleted          bool
 	syncE                  *SyncEStats // device name is the key
-	isClockClassSet        bool
-	isLastSyncStateSet     bool
-	isLastOffsetSet        bool
 }
 
 // SyncEStats collects stats for synceE

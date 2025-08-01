@@ -25,7 +25,6 @@ func (p *PTPEventManager) ParsePTP4l(processName, configName, profileName, outpu
 	ptpInterface ptp4lconf.PTPInterface, ptp4lCfg *ptp4lconf.PTP4lConfig, ptpStats stats.PTPStats) {
 	var err error
 	if strings.Contains(output, classChangeIdentifier) {
-		log.Debugf("DZK Processing clock class change event")
 		if len(fields) < 5 {
 			log.Errorf("clock class not in right format %s", output)
 			return
