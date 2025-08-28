@@ -1,6 +1,6 @@
 # cloud-event-proxy
-  The cloud-event-proxy project provides a mechanism for events from the K8s infrastructure to be delivered to CNFs with low-latency.  
-  The initial event functionality focuses on the operation of the PTP synchronization protocol, but the mechanism can be extended for any infrastructure event that requires low-latency.  
+  The cloud-event-proxy project provides a mechanism for events from the K8s infrastructure to be delivered to CNFs with low-latency.
+  The initial event functionality focuses on the operation of the PTP synchronization protocol, but the mechanism can be extended for any infrastructure event that requires low-latency.
   The mechanism is an integral part of k8s/OCP RAN deployments where the PTP protocol is used to provide timing synchronization for the RAN software elements
 
 
@@ -10,6 +10,9 @@
 ## Contents
 * [Transport Protocol](#event-transporter)
     * [HTTP Protocol](#http-protocol)
+* [Authentication](#authentication)
+    * [mTLS and OAuth Support](#mtls-and-oauth-support)
+    * [Consumer Examples](#consumer-examples)
 * [Publishers](#creating-publisher)
     * [JSON Example](#publisher-json-example)
     * [Go Example](#creating-publisher-golang-example)
@@ -22,7 +25,7 @@
   * [Event via rest api](#publisher-event-create-via-rest-api)
 * [Metrics](#metrics)
 * [Plugin](#plugin)
-  
+
 ## Event Transporter
 Cloud event proxy currently support one type of transport protocol
 1. HTTP Protocol
@@ -33,7 +36,7 @@ CloudEvents HTTP Protocol will be enabled based on url in `transport-host`.
 If HTTP is identified then the publisher will start a publisher rest service, which is accessible outside the container via k8s service name.
 The Publisher service will have the ability to register consumer endpoints to publish events.
 
-The transport URL is defined in the format of 
+The transport URL is defined in the format of
 ```yaml
 - "--transport-host=$(TRANSPORT_PROTOCAL)://$(TRANSPORT_SERVICE).$(TRANSPORT_NAMESPACE).svc.cluster.local:$(TRANSPORT_PORT)"
 ```
@@ -102,8 +105,118 @@ HTTP consumer example
             - "--api-port=8089"
 ```
 
+## Authentication
+
+Cloud Event Proxy supports enterprise-grade authentication for secure event communication.
+
+### mTLS and OAuth Support
+
+The proxy provides comprehensive authentication mechanisms:
+
+- **mTLS (Mutual TLS)**: Transport layer security with client certificate authentication
+- **OAuth**: Application layer authentication using JWT tokens
+- **OpenShift Integration**: Native support for OpenShift Service CA and OAuth server
+
+For detailed configuration instructions, see:
+- **[Authentication Implementation](AUTHENTICATION_IMPLEMENTATION.md)** - Complete implementation guide
+- **[Consumer Examples](examples/consumer/README.md)** - Working consumer examples with authentication
+- **[Manifest Examples](examples/manifests/README.md)** - Kubernetes deployment examples
+
+### Consumer Examples
+
+The repository includes fully functional consumer examples demonstrating:
+
+- **Basic Consumer**: Simple event consumer without authentication
+- **Authenticated Consumer**: Consumer with mTLS and OAuth authentication
+- **OpenShift Integration**: Automated deployment with Service CA and OAuth server
+
+Quick start:
+```bash
+# Deploy authenticated consumer with default cluster name (openshift.local)
+make deploy-consumer
+
+# Deploy with custom cluster name
+export CLUSTER_NAME=your-cluster-name.com
+make deploy-consumer
+
+# Run authentication examples
+cd examples/auth-examples && go run auth-examples.go
+```
+
+### Cluster Configuration
+
+The authentication system uses dynamic cluster name configuration with **strict OAuth validation**:
+
+- **Default**: `openshift.local` (consistent with ptp-operator)
+- **Custom**: Set `CLUSTER_NAME` environment variable before deployment
+- **OAuth URLs**: Automatically generated as `https://oauth-openshift.apps.${CLUSTER_NAME}`
+- **Security**: OAuth tokens are validated against the exact configured issuer with no bypass mechanisms
+
+This ensures OAuth issuer URLs match your actual OpenShift cluster configuration and prevents authentication bypass due to issuer mismatches.
+
+#### Updating Cluster Name at Runtime
+
+If you need to update the cluster name after deployment (e.g., when moving from test to production clusters):
+
+**For PTP Operator (publisher side):**
+```bash
+# Update the operator deployment
+oc set env deployment/ptp-operator -n openshift-ptp CLUSTER_NAME=your-cluster.example.com
+oc rollout status deployment/ptp-operator -n openshift-ptp
+
+# Verify authentication resources are updated
+oc get configmap ptp-event-publisher-auth -n openshift-ptp -o jsonpath='{.data.config\.json}' | jq '.oauthIssuer'
+```
+
+**For Consumer (client side):**
+
+**Method 1: Automated Redeployment (Recommended)**
+```bash
+# Set new cluster name and redeploy
+export CLUSTER_NAME=your-cluster.example.com
+make undeploy-consumer
+make deploy-consumer
+
+# Verify consumer is running with correct OAuth configuration
+oc get configmap consumer-auth-config -n cloud-events -o jsonpath='{.data.config\.json}' | jq '.oauthIssuer'
+oc logs deployment/cloud-consumer-deployment -n cloud-events --tail=10
+```
+
+**Method 2: Manual ConfigMap Update**
+```bash
+# Update consumer authentication configuration
+CLUSTER_NAME=your-cluster.example.com
+oc patch configmap consumer-auth-config -n cloud-events --type='json' -p="[
+  {\"op\": \"replace\", \"path\": \"/data/config.json\", \"value\": \"{\\\"enableMTLS\\\": true, \\\"useServiceCA\\\": true, \\\"clientCertPath\\\": \\\"/etc/cloud-event-consumer/client-certs/tls.crt\\\", \\\"clientKeyPath\\\": \\\"/etc/cloud-event-consumer/client-certs/tls.key\\\", \\\"caCertPath\\\": \\\"/etc/cloud-event-consumer/ca-bundle/service-ca.crt\\\", \\\"enableOAuth\\\": true, \\\"useOpenShiftOAuth\\\": true, \\\"oauthIssuer\\\": \\\"https://oauth-openshift.apps.$CLUSTER_NAME\\\", \\\"oauthJWKSURL\\\": \\\"https://oauth-openshift.apps.$CLUSTER_NAME/oauth/jwks\\\", \\\"requiredScopes\\\": [\\\"user:info\\\"], \\\"requiredAudience\\\": \\\"openshift\\\", \\\"serviceAccountName\\\": \\\"consumer-sa\\\", \\\"serviceAccountToken\\\": \\\"/var/run/secrets/kubernetes.io/serviceaccount/token\\\"}\"}
+]"
+
+# Restart consumer to pick up changes
+oc rollout restart deployment/cloud-consumer-deployment -n cloud-events
+oc rollout status deployment/cloud-consumer-deployment -n cloud-events
+```
+
+**Verification Commands:**
+```bash
+# Check consumer OAuth configuration
+oc get configmap consumer-auth-config -n cloud-events -o jsonpath='{.data.config\.json}' | jq '.oauthIssuer'
+
+# Test OAuth server connectivity
+CLUSTER_NAME=$(oc get configmap consumer-auth-config -n cloud-events -o jsonpath='{.data.config\.json}' | jq -r '.oauthIssuer' | sed 's|https://oauth-openshift.apps.||')
+curl -k "https://oauth-openshift.apps.$CLUSTER_NAME/oauth/jwks"
+
+# Check consumer logs for authentication status
+oc logs deployment/cloud-consumer-deployment -n cloud-events | grep -E "OAuth|authentication|subscription"
+```
+
+### Recent Security Improvements
+
+- **Fixed OAuth Security Vulnerability**: Implemented strict OAuth token validation to prevent unauthorized access
+- **Enhanced Issuer Validation**: Token issuer must exactly match the configured OAuth issuer
+- **Comprehensive Token Validation**: Expiration, audience, and signature verification
+- **Clear Error Messages**: Authentication failures return specific error codes without exposing sensitive information
+
 ## Creating Publisher
-### Publisher JSON Example 
+### Publisher JSON Example
 Create Publisher Resource: JSON request
 ```json
 {
@@ -132,11 +245,11 @@ import (
 	"github.com/redhat-cne/sdk-go/pkg/types"
 )
 func main(){
-  //channel for the transport handler subscribed to get and set events  
+  //channel for the transport handler subscribed to get and set events
     eventInCh := make(chan *channel.DataChan, 10)
     pubSubInstance = v1pubsub.GetAPIInstance(".")
     endpointURL := &types.URI{URL: url.URL{Scheme: "http", Host: "localhost:9085", Path: fmt.Sprintf("%s%s", apiPath, "dummy")}}
-    // create publisher 
+    // create publisher
     pub, err := pubSubInstance.CreatePublisher(v1pubsub.NewPubSub(endpointURL, "test/test"))
 
 }
@@ -171,14 +284,14 @@ import (
 	"github.com/redhat-cne/sdk-go/pkg/types"
 )
 func main(){
-    //channel for the transport handler subscribed to get and set events  
+    //channel for the transport handler subscribed to get and set events
     eventInCh := make(chan *channel.DataChan, 10)
-    
+
     pubSubInstance = v1pubsub.GetAPIInstance(".")
     endpointURL := &types.URI{URL: url.URL{Scheme: "http", Host: "localhost:8089", Path: fmt.Sprintf("%s%s", apiPath, "dummy")}}
-    // create subscription 
+    // create subscription
     pub, err := pubSubInstance.CreateSubscription(v1pubsub.NewPubSub(endpointURL, "test/test"))
-    
+
 }
 
 ```
@@ -215,7 +328,7 @@ The following example shows a Cloud Native Events serialized as JSON:
     "data": {
     "version": "v1.0",
     "values": [{
-        "resource": "/cluster/node/ptp", 
+        "resource": "/cluster/node/ptp",
         "dataType": "notification",
         "valueType": "enumeration",
         "value": "ACQUIRING-SYNC"
@@ -257,7 +370,7 @@ Values: []cneevent.DataValue{
         },
     },
 }
-data.SetVersion("v1") 
+data.SetVersion("v1")
 event.SetData(data)
 
 ```
@@ -306,4 +419,3 @@ Cloud native events rest API comes with following metrics collectors .
 
 ## Supported PTP configurations
 [Supported configurations](docs/configurations.md)
-
