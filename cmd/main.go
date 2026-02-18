@@ -52,6 +52,7 @@ import (
 	"github.com/redhat-cne/cloud-event-proxy/pkg/common"
 	"github.com/redhat-cne/cloud-event-proxy/pkg/plugins"
 	"github.com/redhat-cne/cloud-event-proxy/pkg/restclient"
+	ptptls "github.com/redhat-cne/cloud-event-proxy/pkg/tls"
 	apiMetrics "github.com/redhat-cne/rest-api/pkg/localmetrics"
 	"github.com/redhat-cne/sdk-go/pkg/channel"
 	sdkMetrics "github.com/redhat-cne/sdk-go/pkg/localmetrics"
@@ -222,12 +223,8 @@ func metricServer(address string) {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	go wait.Until(func() {
-		server := &http.Server{
-			Addr:              address,
-			ReadHeaderTimeout: 5 * time.Second,
-			Handler:           mux,
-		}
-		err := server.ListenAndServe()
+		server := ptptls.NewServer(address, mux)
+		err := ptptls.ListenAndServe(server)
 		if err != nil {
 			log.Errorf("error with metrics server %s\n, will retry to establish", err.Error())
 		}
