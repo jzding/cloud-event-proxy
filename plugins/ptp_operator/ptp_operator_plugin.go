@@ -112,8 +112,10 @@ func Start(wg *sync.WaitGroup, configuration *common.SCConfiguration, _ func(e i
 		log.Warn(err)
 	}
 	eventManager.SetInitalMetrics()
+
 	wg.Add(1)
 	// create socket listener
+	panic("testing: panic before listenToSocket")
 	go listenToSocket(wg)
 	// watch for ptp any config updates
 	go eventManager.PtpConfigMapUpdates.WatchConfigMapUpdate(nodeName, configuration.CloseCh, false)
