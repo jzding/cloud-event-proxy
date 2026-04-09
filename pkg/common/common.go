@@ -309,18 +309,21 @@ func PublishEvent(scConfig *SCConfiguration, e ceevent.Event) error {
 // PublishEventViaAPI ... publish events by not using http request but direct api
 func PublishEventViaAPI(scConfig *SCConfiguration, cneEvent ceevent.Event, resourceAddress string) error {
 	if ceEvent, err := GetPublishingCloudEvent(scConfig, cneEvent); err == nil {
-		scConfig.EventOutCh <- &channel.DataChan{
+		select {
+		case scConfig.EventOutCh <- &channel.DataChan{
 			Type:     channel.EVENT,
 			Status:   channel.NEW,
 			Data:     ceEvent,
 			Address:  resourceAddress, // this is the publishing address
 			ClientID: scConfig.ClientID(),
+		}:
+			log.Debugf("event source %s sent to queue to process", ceEvent.Source())
+			log.Debugf("event sent %s", cneEvent.JSONString())
+			localmetrics.UpdateEventPublishedCount(ceEvent.Source(), localmetrics.SUCCESS, 1)
+		default:
+			log.Warningf("EventOutCh full, dropping event for %s", resourceAddress)
+			localmetrics.UpdateEventPublishedCount(ceEvent.Source(), localmetrics.FAIL, 1)
 		}
-
-		log.Debugf("event source %s sent to queue to process", ceEvent.Source())
-		log.Debugf("event sent %s", cneEvent.JSONString())
-
-		localmetrics.UpdateEventPublishedCount(ceEvent.Source(), localmetrics.SUCCESS, 1)
 	}
 	return nil
 }
